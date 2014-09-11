@@ -39,11 +39,6 @@ var MongoClient = require('mongodb').MongoClient
     });
 
     imap.connect();
-
-
-
-
-
   });
 
 
@@ -59,7 +54,13 @@ function going() {
       if (m) {
         var n = m[1].replace('"', '').replace('"', '').trim();
         var e = m[2];
-           mail.insert({from: e, seqno: res[i].seqno, body: res[i].body, attributes: res[i].attributes}, function (err, mdoc) {
+           mail.insert({
+             from: e,
+             seqno: res[i].seqno,
+             subject: res[i].body.subject[0],
+             to: res[i].body.to,
+             date: res[i].body.date[0],
+             attributes: res[i].attributes}, function (err, mdoc) {
              console.log("Y", err, mdoc);
              user.findAndModify({email: e}, null, {$set: {email: e}, $addToSet: {aka: n}, $inc: {messages: 1}}, {upsert: true}, function (err, udoc) {
                console.log("X", err, udoc);
