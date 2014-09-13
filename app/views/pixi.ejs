@@ -1,0 +1,101 @@
+<html>
+  <head>
+    <link href="/css/main.css" rel="stylesheet" type="text/css">
+    <script src="/js/lib/jquery-2.1.1.min.js" charset="utf-8"></script>
+    <script src="/js/lib/pixi.dev.js" charset="utf-8"></script>
+  </head>
+  <body>
+
+    <script>
+		var stage = new PIXI.Stage(0xffffff, true);
+		var renderer = PIXI.autoDetectRenderer(1500, 600);
+		document.body.appendChild(renderer.view);
+        var bg = new PIXI.DisplayObjectContainer();
+        var mg = new PIXI.DisplayObjectContainer();
+        var fg = new PIXI.DisplayObjectContainer();
+        stage.addChild(bg);
+        stage.addChild(mg);
+        stage.addChild(fg);
+
+        var tt = new PIXI.Text("tooltip");
+        fg.addChild(tt);
+
+        function animate() {
+			requestAnimFrame(animate);
+			renderer.render(stage);
+		}
+        requestAnimFrame(animate);
+
+        var year = 2012, week = 0, x = 0;
+
+        function get_data() {
+            week++;
+            if (week > 52)
+            {
+                return;
+                year ++;
+                week = 1;
+            }
+            $.ajax('/1/' + year + '/' + week).done(function (r) {
+                var t = 0;
+                for (var i = 0; i < r.length; i++) {
+                    t += r[i].hits;
+                }
+                var b = getWeek(r, t);
+                b.position.x = x;
+                b.position.y = 100;
+                mg.addChild(b);
+                x += W;
+                get_data();
+            });
+        }
+
+        get_data();
+
+        var H = 250;
+        var W = 20;
+        var C = {};
+        function getWeek(data, t) {
+            var b = new PIXI.DisplayObjectContainer();
+            var y = 0;
+            for (var i = 0; i < data.length; i++) {
+                (function(dr){
+                    var e = dr.sender;
+                    var h = H * (dr.hits / t);
+                    var c = C[e];
+                    if (!c)
+                        C[e] = c = {
+                            color: 0xFFFFFF*Math.random(),
+                            rects: []
+                        };
+
+                    var r = new PIXI.Graphics();
+                    C[e].rects.push(r);
+                    r.beginFill(c.color,1);
+                    r.alpha = .2;
+                    r.drawRect(0, 0, W, h);
+                    r.hitArea = new PIXI.Rectangle(0,0, W, h);
+                    r.interactive = true;
+                    //r.buttonMode = true;
+                    r.mouseover = function (d) {
+                        console.log(dr.sender, dr.hits);
+                        for (var i=0; i<C[dr.sender].rects.length; i++)
+                            C[dr.sender].rects[i].alpha = 1;
+                        tt.setText(dr.sender);
+                    };
+                    r.mouseout = function (d) {
+                        for (var i=0; i<C[dr.sender].rects.length; i++)
+                            C[dr.sender].rects[i].alpha = .2;
+                    };
+
+                    r.position.x = 0;
+                    r.position.y = y;
+                    y += h;
+                    b.addChild(r);
+                })(data[i]);
+            }
+            return b;
+        }
+    </script>
+  </body>
+</html>

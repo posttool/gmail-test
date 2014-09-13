@@ -3,12 +3,13 @@ var MongoClient = require('mongodb').MongoClient;
 var inspect = require('util').inspect,
     format = require('util').format;
 
+var forEach = require('./utils').forEach;
 var config = require('./config');
 
 var imap = new Imap(config.imap);
 
 var q = {};
-var users, mails;
+var users, mails, relationships;
 var user;
 
 
@@ -17,114 +18,246 @@ MongoClient.connect(config.mongo, function (err, db) {
 
   users = db.collection('user');
   mails = db.collection('mail');
+  relationships = db.collection('relationship');
 
-  users.findAndModify({email: e}, null, {$set: {email: e, lastUid: null}}, {upsert: true}, function (err, udoc) {
+  users.remove({}, function () {
+    mails.remove({}, function () {
+      relationships.remove({}, function () {
+        init_user(); // todo use q : init_user, then init_imap, then fetch_some
+      });
+    });
+  });
+});
+
+function init_user(){
+  var e = config.imap.user;
+  users.findAndModify({email: e}, null, {$set: {email: e, lastUid: null}}, {upsert: true, 'new': true}, function (err, udoc) {
     if (err) throw err;
     user = udoc;
+    console.log("user",err,udoc);
     init_imap();
   });
-
-});
+}
 
 function init_imap(){
   imap.once('ready', function () {
     imap.openBox('INBOX', true, function (err, box) {
       if (err) throw err;
-      going();
+      fetch_some(function(){
+        compute_relationships(function(){
+          console.log("DONE")
+        });
+      });
     });
   });
-
   imap.once('error', function (err) {
     console.log(err);
   });
-
   imap.once('end', function () {
     console.log('Connection ended');
   });
-
   imap.connect();
 }
 
 
-function going() {
+function fetch_some(complete) {
   fetch(function (err, res) {
     if (err) throw err;
-    if (res.length == 0)
+    if (!res || res.length == 0)
+    {
+      console.log("COMPLETE");
+      complete();
       return;
-    for (var i = 0; i < res.length; i++) {
-      var from = res[i].body.from[0];
-      var m = from.match(/(.*)\<(.*)\>/);
-      if (m) {
-        var n = m[1].replace('"', '').replace('"', '').trim();
-        var e = m[2];
-        var u = res[i].attributes.uid;
-        var s = (res[i].body.subject && res[i].body.subject.length != 0) ? res[i].body.subject[0] : '';
-        //console.log(res[i].seqno, u, s);
-        mails.insert({
-          uid: u,
-          from: e,
-          subject: s,
-          to: res[i].body.to,
-          date: res[i].body.date[0],
-          attributes: res[i].attributes
-        }, function (err, mdoc) {
-          console.log("Y", err, mdoc);
-          user.lastUid = mdoc.uid;
-          users.save(user.lastUid, function (err, udoc) {
-            console.log("Z", err, udoc);
-            users.findAndModify({email: e}, null, {$set: {email: e}, $addToSet: {aka: n}, $inc: {messages: 1}}, {upsert: true}, function (err, udoc) {
-              console.log("X", err, udoc);
-            });
+    }
+    console.log("processing", res.length);
+    forEach(res, function (r, next) {
+      //console.log("*");
+      var from = r.body.from[0];
+      var m = parse_email(from);
+      if (!m)
+        return next();
+      var u = r.attributes.uid;
+      var s = (r.body.subject && r.body.subject.length != 0) ? r.body.subject[0] : '';
+      var tos = parse_emails_only(r.body.to);
+      if (tos.indexOf(user.email) == -1)
+        tos.push(user.email);
+      var mid = r.body['message-id'][0];
+      var irt = r.body['in-reply-to'] ? r.body['in-reply-to'][0] : null;
+      var rf = r.body['references'] ? r.body['references'][0].split(' ') : null;
+      //insert mail
+      mails.insert({ // might want to upsert
+        uid: u,
+        messageId: mid,
+        inReplyTo: irt,
+        references: rf,
+        from: m.email,
+        subject: s,
+        to: tos,
+        date: new Date(r.body.date[0]),
+        attributes: r.attributes
+      }, function (err, mdoc) {
+        if (err) throw err;
+        console.log("saved mail", s);
+        // update my stats (last mail indexed)
+        user.lastUid = mdoc[0].uid;
+        users.save(user, function (err, udoc) {
+          if (err) throw err;
+          // console.log("saved last seen uid ", mdoc[0].uid);
+          // add or update the person its from
+          users.findAndModify({email: m.email}, null, {$set: {email: m.email}, $addToSet: {aka: m.name}}, {upsert: true, 'new': true}, function (err, u2doc) {
+            if (err) throw err;
+            next();
           });
         });
-      }
+      });
+    }, function(){
+      console.log('-------------- ' + user.lastUid + ' -------------------')
+      fetch_some(complete);
+    });
+  });
+}
+
+// computing relationships between people
+function compute_relationships(complete) {
+  mails.find({}, function (err, resultCursor) {
+    function processItem(err, item) {
+      if (item === null)
+        return complete();
+      forEach(item.to, function (t, n) {
+        var w = getWeekNumber(item.date);
+        relationships.findAndModify(
+          {sender: item.from, receiver: t, year: w[0], week: w[1]}, null,
+          {$set: {sender: item.from, receiver: t, year: w[0], week: w[1]}, $inc: {hits: 1}, $addToSet: {mail: item._id}},
+          {upsert: true, 'new': true}, function (err, rdoc) {
+            if (err) throw err;
+            //console.log("relationship", rdoc)
+            n();
+          });
+      }, function (err) {
+        resultCursor.nextObject(processItem);
+      });
     }
-    console.log('-------------- ' + s + ' -------------------')
-    s += w;
-    going();
+    resultCursor.nextObject(processItem);
   });
 }
 
 
+
+// imap fetching
 
 function fetch(cb) {
   var f;
+  var fopts = {
+    bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE Message-ID References In-Reply-To)',
+    struct: true
+  };
+  console.log("FETCH from " + user.lastUid);
   if (user.lastUid)
-    f = imap.fetch('SEARCH UID '+user.lastUid+':*', {
-      bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE)',
-      struct: true
+    imap.search([
+      ['UID', (user.lastUid + 1) + ':' + (user.lastUid + 1000)]
+    ], function (err, results) {
+      //console.log('search res', err, results)
+      if (!results || results.length == 0)
+        return cb(null, null);
+      f = imap.fetch(results, fopts);
+      handle_events(f);
     });
-  else
-    f = imap.seq.fetch('1', {
-      bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE)',
-      struct: true
-    });
-  var results = [];
-  f.on('message', function (msg, seqno) {
-    var o = {seqno: seqno, body: "", attributes: null};
-    results.push(o);
-    msg.on('body', function (stream, info) {
-      stream.on('data', function (chunk) {
-        o.body += chunk.toString('utf8');
+  else {
+    f = imap.seq.fetch('1', fopts);
+    handle_events(f);
+  }
+
+  function handle_events(f) {
+    var results = [];
+    f.on('message', function (msg, seqno) {
+      //console.log("seqno:", seqno)
+      var o = {seqno: seqno, body: "", attributes: null};
+      results.push(o);
+      msg.on('body', function (stream, info) {
+        stream.on('data', function (chunk) {
+          o.body += chunk.toString('utf8');
+        });
+        stream.once('end', function () {
+          o.body = Imap.parseHeader(o.body);
+          //console.log(o.body)
+        });
       });
-      stream.once('end', function () {
-        o.body = Imap.parseHeader(o.body);
+      msg.once('attributes', function (attrs) {
+        o.attributes = attrs;
+      });
+      msg.once('end', function () {
       });
     });
-    msg.once('attributes', function (attrs) {
-      o.attributes = attrs;
+    f.once('error', function (err) {
+      console.log("ERR",err)
+      cb(err);
     });
-    msg.once('end', function () {
+    f.once('end', function () {
+      cb(null, results);
     });
-  });
-  f.once('error', function (err) {
-    cb(err);
-  });
-  f.once('end', function () {
-    cb(null, results);
-  });
+  }
 
 }
+
+
+
+
+// email parsing
+function parse_email(s) {
+  if (!s)
+    return null;
+  var m = s.match(/(.*)\<(.*)\>/);
+  if (m) {
+    var n = m[1].replace('"', '').replace('"', '').trim();
+    var e = m[2];
+    return {name: n, email: e};
+  }
+  return null;
+}
+function parse_emails(a){
+  if (!a)
+    return []
+  var pa = [];
+  for (var i=0; i< a.length; i++)
+  {
+    var p = parse_email(a[i]);
+    if (p)
+      pa.push(p);
+  }
+  return pa;
+}
+function parse_emails_only(a){
+  var pa = parse_emails(a);
+  var ea = [];
+  for (var i=0; i< pa.length; i++)
+    ea.push(pa[i].email)
+  return ea;
+}
+
+
+
+
+
+// get week number from date
+function getWeekNumber(d) {
+    // Copy date so don't modify original
+    d = new Date(+d);
+    d.setHours(0,0,0);
+    // Set to nearest Thursday: current date + 4 - current day number
+    // Make Sunday's day number 7
+    d.setDate(d.getDate() + 4 - (d.getDay()||7));
+    // Get first day of year
+    var yearStart = new Date(d.getFullYear(),0,1);
+    // Calculate full weeks to nearest Thursday
+    var weekNo = Math.ceil(( ( (d - yearStart) / 86400000) + 1)/7)
+    // Return array of year and week number
+    return [d.getFullYear(), weekNo];
+}
+
+
+
+
+
 
 
 
@@ -132,7 +265,7 @@ function fetch(cb) {
 
 // attachments
 
-function getAttachments(attrs){
+function getAttachments(attrs) {
   var attachments = findAttachmentParts(attrs.struct);
   console.log(prefix + 'Has attachments: %d', attachments.length);
   for (var i = 0, len = attachments.length; i < len; ++i) {
@@ -143,7 +276,7 @@ function getAttachments(attrs){
       struct: true
     });
     f.on('message', buildAttMessageFunction(attachment));
-
+  }
 }
 
 function findAttachmentParts(struct, attachments) {
