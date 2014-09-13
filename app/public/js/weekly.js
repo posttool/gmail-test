@@ -1,7 +1,7 @@
 var $el = $("#c");
 
-var year = 2014, week = 0, x = 10; //current year, week, x position
-var H = 150; // if we fix height
+var year = 2013, week = 0, x = 10; //current year, week, x position
+var H = 350; // if we fix height
 var W = 30; // fixed width of week
 
 $el.append("<h2>"+year+"</h2>");
@@ -66,7 +66,7 @@ function getWeek(data, t) {
         $t.text(dr.sender + " " + dr.hits);
         var pp = $b.parent().position();
         $t.css({'top': 32+'px', 'left': (pp.left)+'px'});
-        overEmail(dr.sender,.75);
+        overEmail(dr.sender,selectedEmail == dr.sender ? 1 :.75);
      }).mouseout(function (d) {
         if ($selected) {
           $t.text(selectedEmail);
@@ -78,13 +78,13 @@ function getWeek(data, t) {
         if ($selectedw)
           $selectedw.removeClass('selected');
         if ($selected)
-          $selected.removeClass('selected');
+          $selected.css({'background-color':cc});
         overEmail(selectedEmail, .2);
         $selectedw = $($weeks.children()[week-1]);
         $selectedw.addClass('selected');
         selectedEmail = dr.sender;
         $selected = $b;
-        $selected.addClass('selected');
+        $selected.css({'background-color':'#fff'});
         overEmail(selectedEmail, 1);
         getMessages(dr);
       });
@@ -110,9 +110,10 @@ function getMessages(dr) {
       if (!s[r[i].subject]) {
         s[r[i].subject] = true;
         var d = new Date(r[i].date);
-        var ds = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Nov', 'Dec'][d.getMonth()] + " " + d.getDate()
-        var $tr = $("<tr></tr>");
-        var $td1 = $("<td></td>")
+        var ds = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] + " " + d.getDate();
+        ds += " "+d.getHours()+":"+ d.getMinutes();
+        var $tr = $("<tr valign='top'></tr>");
+        var $td1 = $("<td width='70'></td>")
         var $td2 = $("<td></td>")
         $td1.append("<span class='medium'>" + ds + "</span>");
         $td2.append(r[i].subject);
