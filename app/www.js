@@ -34,7 +34,7 @@ if (useCluster && cluster.isMaster) {
       res.render('index.ejs');
     });
     app.get('/1/:year/:week', function (req, res, next) {
-      var q = {week: Number(req.params.week), year: Number(req.params.year)};
+      var q = {week: Number(req.params.week), year: Number(req.params.year), receiver: config.imap.user};
       relationships.find(q).sort({hits: -1}).toArray(function(err, rels){
         res.json(rels);
       })

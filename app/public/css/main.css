@@ -4,6 +4,9 @@
 .small {
     font-size: .4em;
 }
+.medium {
+    font-size: .7em;
+}
 
 .tooltip {
     position: absolute;
@@ -17,4 +20,12 @@
 .messages {
     position:absolute;
     top: 230px;
+}
+
+.selected {
+    background-color: #000;
+}
+
+.selected .small {
+    color: #fff;
 }
