@@ -33,12 +33,14 @@ if (useCluster && cluster.isMaster) {
     app.get('/', function (req, res, next) {
       res.render('index.ejs');
     });
+
     app.get('/1/:year/:week', function (req, res, next) {
       var q = {week: Number(req.params.week), year: Number(req.params.year), receiver: config.imap.user};
       relationships.find(q).sort({hits: -1}).toArray(function(err, rels){
         res.json(rels);
       })
     });
+
     app.get('/2/:relid', function (req, res, next) {
       relationships.find({_id: new ObjectID(req.params.relid)}).toArray(function(err, rels){
         mails.find({_id: { $in: rels[0].mail}}).sort({date: -1}).toArray(function(err, mails){
@@ -46,6 +48,7 @@ if (useCluster && cluster.isMaster) {
         });
       })
     });
+
     app.listen(3001);
     console.log("ready")
   });

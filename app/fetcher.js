@@ -4,7 +4,7 @@ var forEach = require('./utils').forEach;
 var config = require('./config');
 
 
-var _db, users, mails, relationships;
+var _db, users, mails;
 
 
 function Fetcher(imapConfig){
@@ -28,7 +28,6 @@ Fetcher.prototype.initDb = function (db, cb) {
   _db = db;
   users = db.collection('user');
   mails = db.collection('mail');
-  relationships = db.collection('relationship');
   //
   var self = this;
   if (self.imapConfig.user) {
@@ -42,11 +41,12 @@ Fetcher.prototype.initDb = function (db, cb) {
 };
 
 
-Fetcher.prototype.clean = function(cb) {
-    users.remove({}, function () {
+Fetcher.prototype.clean = function (cb) {
+  users.remove({}, function () {
     mails.remove({}, function () {
       cb();
-    })});
+    })
+  });
 };
 
 
@@ -72,7 +72,7 @@ Fetcher.prototype.set_last_uid = function(uid, cb) {
 
 
 Fetcher.prototype.get_last_uid = function() {
-  return this.user.lastUids[self.box];
+  return this.user.lastUids[this.box];
 };
 
 
@@ -102,14 +102,19 @@ Fetcher.prototype.initImap = function(cb){
 //}
 
 
-Fetcher.prototype.getBox = function (boxType, cb) {
+Fetcher.prototype.fetchAllMailFromBox = function (boxType, cb) {
   var self = this;
+  self.state = 'FETCHING_MAIL'; //TODO manage state please!
   self.box = boxType;
   self.imap.openBox(boxType, true, function (err, box) {
-    if (err) throw err;
-    console.log("opened", box);
+    if (err) {
+      self.state = 'error?';
+      return cb(err);
+    };
+    console.log("**** opened", box);
     self.fetch_some(function () {
       self.imap.closeBox(function (err) {
+        self.state = null;
         cb();
       });
     });
@@ -130,6 +135,8 @@ Fetcher.prototype.fetch_some = function (complete) {
     console.log("processing", res.length);
     forEach(res, function (r, next) {
       //console.log("*");
+      if (!r.body.from || r.body.from.length == 0)
+        return next();
       var from = r.body.from[0];
       var m = parse_email(from);
       if (!m)
@@ -137,6 +144,7 @@ Fetcher.prototype.fetch_some = function (complete) {
       var u = r.attributes.uid;
       var s = (r.body.subject && r.body.subject.length != 0) ? r.body.subject[0] : '';
       var tos = parse_emails_only(r.body.to);
+      var ccs = parse_emails_only(r.body.cc);
       // no! no! no! next 2 lines ... get more info... or have more context
       if (tos.indexOf(self.user.email) == -1)
         tos.push(self.user.email);
@@ -146,23 +154,26 @@ Fetcher.prototype.fetch_some = function (complete) {
       var rf = r.body['references'] ? r.body['references'][0].split(' ') : null;
       var d = r.body.date && r.body.date.length != 0 ? new Date(r.body.date[0]) : null;
       //insert mail
-      mails.insert({ // might want to upsert
-        uid: u,
-        messageId: mid,
-        inReplyTo: irt,
-        references: rf,
-        from: m.email,
-        subject: s,
-        to: tos,
-        date: d,
-        attributes: r.attributes
-      }, function (err, mdoc) {
+      mails.findAndModify({uid: u}, null, {
+        $setOnInsert: {
+          uid: u,
+          messageId: mid,
+          inReplyTo: irt,
+          references: rf,
+          from: m.email,
+          subject: s,
+          to: tos,
+          date: d,
+          attributes: r.attributes,
+        },
+        $addToSet: {
+          boxes: self.box
+        }
+      }, {upsert: true, 'new': true}, function (err, mdoc) {
         if (err) throw err;
-        console.log("saved mail", s);
+        //console.log("saved mail", s);
         // update my stats (last mail indexed)
-        self.set_last_uid(mdoc[0].uid);
-        //self.user.lastUid = mdoc[0].uid;
-        users.save(self.user, function (err, udoc) {
+        self.set_last_uid(u, function (err) {
           if (err) throw err;
           // console.log("saved last seen uid ", mdoc[0].uid);
           // add or update the person its from
@@ -172,8 +183,8 @@ Fetcher.prototype.fetch_some = function (complete) {
           });
         });
       });
-    }, function(){
-      console.log('-------------- ' + self.box+ " " +self.get_last_uid() + ' -------------------')
+    }, function () {
+      console.log('-------------- ' + self.box + " " + self.get_last_uid() + ' -------------------')
       self.fetch_some(complete);
     });
   });

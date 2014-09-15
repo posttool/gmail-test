@@ -222,7 +222,7 @@ function computeRelationships(complete) {
         var w = getWeekNumber(item.date);
         relationships.findAndModify(
           {sender: item.from, receiver: t, year: w[0], week: w[1]}, null,
-          {$set: {sender: item.from, receiver: t, year: w[0], week: w[1]}, $inc: {hits: 1}, $addToSet: {mail: item._id}},
+          {$setOnInsert: {sender: item.from, receiver: t, year: w[0], week: w[1]}, $inc: {hits: 1}, $addToSet: {mail: item._id}},
           {upsert: true, 'new': true}, function (err, rdoc) {
             if (err) throw err;
             //console.log("relationship", rdoc)

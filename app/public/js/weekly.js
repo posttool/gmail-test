@@ -52,7 +52,7 @@ function getWeek(data, t) {
   for (var i = 0; i < data.length; i++) {
     (function (week, dr, i) {
       var e = dr.sender;
-      var h = H * (dr.hits / t);
+      var h = dr.hits * 2; //H * (dr.hits / t);
       if (!C[e])
         C[e] = {
           rects: []
