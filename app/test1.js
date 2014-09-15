@@ -12,43 +12,85 @@ var q = {};
 var users, mails, relationships;
 var user;
 
+function firstTime() {
+  initConnection(function () {
+    deleteAll(function () {
+      initUser(function () {
+        initImap(function () {
+          getInbox(function () {
+            user.lastUid = null;
+            getOutbox(function () {
+              console.log("Done! Hit control-C to quit");
+            })
+          })
+        })
+      })
+    })
+  });
+}
 
-MongoClient.connect(config.mongo, function (err, db) {
-  if (err) throw err;
+function getMailBoxes() {
+  initConnection(function () {
+    initUser(function () {
+      initImap(function () {
+        imap.getBoxes(function (err, b) {
+          console.log(b);
+        })
+      })
+    })
+  })
+}
 
-  users = db.collection('user');
-  mails = db.collection('mail');
-  relationships = db.collection('relationship');
+function getRelationships(){
+    initConnection(function () {
+    initUser(function () {
+      initImap(function () {
+        computeRelationships(function(){
+          console.log("DONE!");
+        })
+      })
+    })
+  })
+}
+getRelationships();
 
+
+function initConnection(cb) {
+  MongoClient.connect(config.mongo, function (err, db) {
+    if (err) throw err;
+
+    console.log("connected");
+    users = db.collection('user');
+    mails = db.collection('mail');
+    relationships = db.collection('relationship');
+
+    cb();
+  });
+}
+
+function deleteAll(cb) {
   users.remove({}, function () {
     mails.remove({}, function () {
       relationships.remove({}, function () {
-        init_user(); // todo use q : init_user, then init_imap, then fetch_some
+        cb();
       });
     });
   });
-});
+}
 
-function init_user(){
+function initUser(cb){
   var e = config.imap.user;
   users.findAndModify({email: e}, null, {$set: {email: e, lastUid: null}}, {upsert: true, 'new': true}, function (err, udoc) {
     if (err) throw err;
     user = udoc;
     console.log("user",err,udoc);
-    init_imap();
+    cb();
   });
 }
 
-function init_imap(){
+function initImap(cb){
   imap.once('ready', function () {
-    imap.openBox('INBOX', true, function (err, box) {
-      if (err) throw err;
-      fetch_some(function(){
-        compute_relationships(function(){
-          console.log("DONE")
-        });
-      });
-    });
+    cb();
   });
   imap.once('error', function (err) {
     console.log(err);
@@ -59,6 +101,25 @@ function init_imap(){
   imap.connect();
 }
 
+function getInbox(cb) {
+  getBox('INBOX', cb);
+}
+
+function getOutbox(cb) {
+  getBox('[Gmail]/Sent Mail', cb);
+}
+
+function getBox(boxType, cb) {
+  imap.openBox(boxType, true, function (err, box) {
+    if (err) throw err;
+    console.log("opened", box);
+    fetch_some(function () {
+      imap.closeBox(function (err) {
+        cb();
+      })
+    });
+  });
+}
 
 function fetch_some(complete) {
   fetch(function (err, res) {
@@ -84,6 +145,7 @@ function fetch_some(complete) {
       var mid = r.body['message-id'][0];
       var irt = r.body['in-reply-to'] ? r.body['in-reply-to'][0] : null;
       var rf = r.body['references'] ? r.body['references'][0].split(' ') : null;
+      var d = r.body.date && r.body.date.length != 0 ? new Date(r.body.date[0]) : null;
       //insert mail
       mails.insert({ // might want to upsert
         uid: u,
@@ -93,7 +155,7 @@ function fetch_some(complete) {
         from: m.email,
         subject: s,
         to: tos,
-        date: new Date(r.body.date[0]),
+        date: d,
         attributes: r.attributes
       }, function (err, mdoc) {
         if (err) throw err;
@@ -118,7 +180,7 @@ function fetch_some(complete) {
 }
 
 // computing relationships between people
-function compute_relationships(complete) {
+function computeRelationships(complete) {
   mails.find({}, function (err, resultCursor) {
     function processItem(err, item) {
       if (item === null)
@@ -263,7 +325,7 @@ function getWeekNumber(d) {
 
 
 
-// attachments
+// attachments  // TODO
 
 function getAttachments(attrs) {
   var attachments = findAttachmentParts(attrs.struct);
