@@ -12,47 +12,80 @@ var q = {};
 var users, mails, relationships;
 var user;
 
-function firstTime() {
+var cmd = process.argv[2];
+if (cmd == 'clean')
+  clean(function(){ process.exit(1); });
+else if (cmd == 'mailboxes')
+  getMailBoxes(function(){ process.exit(1); });
+else if (cmd == 'import')
+  importAll(function(){ process.exit(1); });
+else if (cmd == 'relationships')
+  getRelationships(function(){ process.exit(1); });
+
+
+function clean(cb) {
   initConnection(function () {
     deleteAll(function () {
       initUser(function () {
-        initImap(function () {
-          getInbox(function () {
-            user.lastUid = null;
-            getOutbox(function () {
-              console.log("Done! Hit control-C to quit");
-            })
-          })
-        })
-      })
-    })
+        console.log('ready');
+        cb();
+      });
+    });
   });
 }
 
-function getMailBoxes() {
+
+function getMailBoxes(cb) {
   initConnection(function () {
     initUser(function () {
       initImap(function () {
         imap.getBoxes(function (err, b) {
-          console.log(b);
-        })
-      })
-    })
-  })
+          for (var p in b) {
+            console.log(p);
+            var c = b[p].children;
+            for (var pc in c) {
+              console.log("  "+pc);
+            }
+          }
+          cb();
+        });
+      });
+    });
+  });
 }
 
-function getRelationships(){
+function importAll(cb) {
+  initConnection(function () {
+    initUser(function () {
+      initImap(function () {
+        imap.getBoxes(function (err, b) {
+          for (var p in b) {
+            console.log(p);
+            user.lastUids[p] = 0;
+            fetch(function(){
+              var c = b[p].children;
+              for (var pc in c) {
+                console.log("  "+pc);
+              }
+            });
+          }
+        });
+      });
+    });
+  });
+}
+
+function getRelationships(cb){
     initConnection(function () {
     initUser(function () {
       initImap(function () {
         computeRelationships(function(){
           console.log("DONE!");
-        })
-      })
-    })
-  })
+        });
+      });
+    });
+  });
 }
-getRelationships();
 
 
 function initConnection(cb) {
@@ -80,7 +113,7 @@ function deleteAll(cb) {
 
 function initUser(cb){
   var e = config.imap.user;
-  users.findAndModify({email: e}, null, {$set: {email: e, lastUid: null}}, {upsert: true, 'new': true}, function (err, udoc) {
+  users.findAndModify({email: e}, null, {$set: {email: e, lastUids: {}}}, {upsert: true, 'new': true}, function (err, udoc) {
     if (err) throw err;
     user = udoc;
     console.log("user",err,udoc);
@@ -116,7 +149,7 @@ function getBox(boxType, cb) {
     fetch_some(function () {
       imap.closeBox(function (err) {
         cb();
-      })
+      });
     });
   });
 }
