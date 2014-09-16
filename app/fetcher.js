@@ -1,8 +1,5 @@
 var Imap = require('imap');
-
 var forEach = require('./utils').forEach;
-var config = require('./config');
-
 
 var _db, users, mails;
 
@@ -14,13 +11,6 @@ function Fetcher(imapConfig){
   this.box = null;
 }
 module.exports = Fetcher;
-
-
-//Fetcher.prototype.initConnection = function(cb) {
-//  MongoClient.connect(config.mongo, function (err, db) {
-//    self.initDb(db, cb);
-//  });
-//};
 
 
 Fetcher.prototype.initDb = function (db, cb) {
@@ -37,7 +27,6 @@ Fetcher.prototype.initDb = function (db, cb) {
       });
     });
   }
-
 };
 
 
@@ -92,16 +81,6 @@ Fetcher.prototype.initImap = function(cb){
 };
 
 
-//Fetcher.prototype.getInbox = function (cb) {
-//  this.getBox('INBOX', cb);
-//}
-
-
-//Fetcher.prototype.getOutbox = function (cb) {
-//  this.getBox('[Gmail]/Sent Mail', cb);
-//}
-
-
 Fetcher.prototype.fetchAllMailFromBox = function (boxType, cb) {
   var self = this;
   self.state = 'FETCHING_MAIL'; //TODO manage state please!
@@ -145,8 +124,8 @@ Fetcher.prototype.fetch_some = function (complete) {
       var s = (r.body.subject && r.body.subject.length != 0) ? r.body.subject[0] : '';
       var tos = parse_emails_only(r.body.to);
       var ccs = parse_emails_only(r.body.cc);
-      // no! no! no! next 2 lines ... get more info... or have more context
-      if (tos.indexOf(self.user.email) == -1)
+      //?
+      if (m.email != self.user.email && tos.indexOf(self.user.email) == -1)
         tos.push(self.user.email);
       //
       var mid = r.body['message-id'][0];
@@ -163,6 +142,7 @@ Fetcher.prototype.fetch_some = function (complete) {
           from: m.email,
           subject: s,
           to: tos,
+          cc: ccs,
           date: d,
           attributes: r.attributes,
         },
@@ -171,7 +151,7 @@ Fetcher.prototype.fetch_some = function (complete) {
         }
       }, {upsert: true, 'new': true}, function (err, mdoc) {
         if (err) throw err;
-        //console.log("saved mail", s);
+        console.log("saved mail", mdoc);
         // update my stats (last mail indexed)
         self.set_last_uid(u, function (err) {
           if (err) throw err;
@@ -197,7 +177,7 @@ Fetcher.prototype.fetch = function (cb) {
   var self = this;
   var f;
   var fopts = {
-    bodies: 'HEADER.FIELDS (FROM TO SUBJECT DATE Message-ID References In-Reply-To)',
+    bodies: 'HEADER.FIELDS (FROM TO CC SUBJECT DATE Message-ID References In-Reply-To)',
     struct: true
   };
   var luid = self.get_last_uid();

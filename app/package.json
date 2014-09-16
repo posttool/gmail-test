@@ -19,6 +19,7 @@
     "kue": "^0.7.5",
     "lodash": "^2.4.1",
     "mime": "1.2.11",
+    "mongodb": "^1.4.10",
     "mongoose": "3.8.7",
     "node-uuid": "1.4.1",
     "nodemailer": "0.6.0",
