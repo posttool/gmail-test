@@ -1,19 +1,62 @@
-Vagrant::Config.run do |config|
 
-  config.vm.box = "precise32"
-  
-  config.vm.box_url = "http://files.vagrantup.com/precise32.box"
 
-  config.vm.forward_port 3002, 3002
-  config.vm.customize ["modifyvm", :id, "--memory", 4196]
-  config.vm.customize ["modifyvm", :id, "--cpus", 2]
-  config.vm.customize ["modifyvm", :id, "--cpuexecutioncap", 100]
-  config.vm.network :hostonly, "10.11.12.25"
+Vagrant.configure("2") do |config|
+  config.omnibus.chef_version = '11.16'
+  config.berkshelf.enabled = true
 
-  config.vm.share_folder "currently13", "/home/currently13", "../currently13"
-  config.vm.share_folder "app", "/home/vagrant/app", "app"
-  config.vm.share_folder "deploy", "/home/vagrant/deploy", "deploy"
+  config.vm.box = "precise64"
 
-  config.vm.provision :shell, :path => "deploy/provision.sh"
+  config.vm.provider "virtualbox" do |v|
+      v.memory = 3120
+      v.cpus = 4
+      v.customize ["modifyvm", :id, "--cpuexecutioncap", "100"]
+    end
 
+
+  #config.ssh.insert_key = true
+  #config.ssh.forward_agent = true
+  config.ssh.password = "vagrant"
+
+  config.vm.network "private_network", ip: "10.11.12.25"
+
+  config.vm.synced_folder "app", "/home/vagrant/app"
+
+
+
+  $provision_script= <<SCRIPT
+  if [[ $(which chef-solo) != '/usr/bin/chef-solo' ]]; then
+    curl -L https://www.opscode.com/chef/install.sh | sudo bash
+    echo 'export PATH="/opt/chef/embedded/bin:$PATH"' >> ~/.bash_profile && source ~/.bash_profile
+  fi
+SCRIPT
+  config.vm.provision :shell, :inline => $provision_script
+
+  config.vm.provision :chef_solo do |chef|
+    chef.json = {
+      :hostname => "xxx",
+      :user => "vagrant",
+      :node_env => "development",
+      :mongodb => {
+        "package-version" => "2.6.3"
+      },
+      :nodejs => {
+        :version => "0.10.29"
+      },
+      "postfix-dovecot" => {
+        :postmaster_address => "dkaram@gmail.com",
+        :hostname => "mail.pagesociety.net"
+      },
+      :apache => {
+        :listen_ports => %w(3333)
+      },
+      :postfixadmin => {
+        :port => "3334",
+        :ssl => true
+      }
+    }
+
+    chef.run_list = [
+      "recipe[maily::default]"
+    ]
+  end
 end

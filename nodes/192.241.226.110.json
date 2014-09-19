@@ -1,0 +1,45 @@
+{
+  "fqdn": "pagesociety.net",
+  "user": "maily",
+
+  "mpongodb": {
+    "package-version": "2.6.3"
+  },
+
+  "nodejs": {
+    "version": "0.10.29"
+  },
+  "node_env": "production",
+
+  "mysql": {
+    "version": "5.5",
+    "server_root_password": "root",
+    "server_debian_password": "root",
+    "server_repl_password": "root",
+    "tunable": {
+      "max_allowed_packet": "256M"
+    }
+  },
+
+  "apache": {
+    "listen_ports": [3333]
+  },
+
+  "postfix-dovecot": {
+    "postmaster_address": "dkaram@gmail.com",
+    "hostname": "mail.pagesociety.net"
+  },
+
+  "postfixadmin": {
+    "port": "3334",
+    "ssl": true,
+    "server_root_password": "root",
+    "server_debian_password": "root",
+    "server_repl_password": "root"
+  },
+
+
+  "run_list": [
+    "recipe[maily::default]"
+  ]
+}
