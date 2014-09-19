@@ -25,6 +25,13 @@
     "listen_ports": [3333]
   },
 
+  "dovecot": {
+    "conf": {
+      "disable_plaintext_auth": true,
+      "ssl": true
+    }
+  },
+
   "postfix-dovecot": {
     "postmaster_address": "dkaram@gmail.com",
     "hostname": "mail.pagesociety.net"
